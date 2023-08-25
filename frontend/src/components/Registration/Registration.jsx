@@ -6,7 +6,6 @@ function Registration(props) {
     name: "",
     email: "",
     password: "",
-    password_confirmation: "",
   });
 
   const [message, setMessage] = useState("");
@@ -18,7 +17,8 @@ function Registration(props) {
         "http://localhost:5000/api/register",
         formData,
       );
-      setMessage(response.data);
+      console.log("Registration Response: ", response);
+      setMessage(response.data.message);
     } catch (error) {
       console.error("Error Registration: ", error);
       setMessage(error.response.data);

@@ -1,8 +1,8 @@
+import firebase_admin
+from firebase_admin import credentials, firestore
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from flask_login import UserMixin, login_user
-from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
@@ -10,57 +10,54 @@ app.config['SECRET_KEY'] = '8BYkEfBA6O6donzWlSihBXox7C0sKR6b'
 CORS(app)
 
 # CONNECT TO DB
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///sms.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-db = SQLAlchemy(app)
+cred = credentials.Certificate("firebase.json")
+firebase_admin.initialize_app(cred)
 
-#
-with app.app_context():
-    db.create_all()
-
-
-# CONFIGURE TABLES
-class User(UserMixin, db.Model):
-    __tablename__ = "user"
-    id = db.Column(db.Integer, primary_key=True)
-    email = db.Column(db.String(100), unique=True)
-    password = db.Column(db.String(250))
-    name = db.Column(db.String(1000))
-    messages = db.relationship("SMS", backref='user', lazy='dynamic')
-
-
-class SMS(db.Model):
-    __tablename__ = "sms"
-    id = db.Column(db.Integer, primary_key=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # Renamed column to user_id
-    direction = db.Column(db.String(10), unique=True, nullable=False)
-    date = db.Column(db.String(50), nullable=False)
-    time = db.Column(db.String(50), nullable=False)
-    body = db.Column(db.Text, nullable=False)
+db = firestore.client()
 
 
 @app.route('/api/register', methods=['POST'])
 def register():
     email = request.json.get('email')
-    print(email)
     name = request.json.get('name')
     password = request.json.get('password')
-    # confirm_password = request.json.get('confirm_password')
 
     if not email or not password:
         return jsonify(message="Please enter your email and password"), 400
-    if User.query.filter_by(email=email).first():
+
+    # Check if user already exists
+    users_ref = db.collection('users')
+    existing_user = users_ref.where('email', '==', email).get()
+    if existing_user:
         return jsonify(message="You have already signed up with that email, log in instead!"), 400
 
-    user = User()
-    user.email = email
-    user.name = name
-    user.password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
+    hashed_password = generate_password_hash(password, method='pbkdf2:sha256', salt_length=8)
+    user_data = {
+        'email': email,
+        'name': name,
+        'password': hashed_password
+    }
+    users_ref.add(user_data)
 
-    db.session.add(user)
-    db.session.commit()
-    # login_user(user)
     return jsonify(message="You have successfully registered!"), 200
+
+
+@app.route('/api/login', methods=['POST'])
+def login():
+    email = request.json.get('email')
+    password = request.json.get('password')
+
+    users_ref = db.collection('users')
+    user_data = users_ref.where('email', '==', email).get()
+
+    if user_data and user_data[0].to_dict():
+        stored_password = user_data[0].to_dict().get('password')
+        if check_password_hash(stored_password, password):
+            return jsonify(message="Successfully logged in!"), 200
+        else:
+            return jsonify(message="Incorrect password!"), 400
+    else:
+        return jsonify(message="User not found!"), 404
 
 
 @app.route('/api/test', methods=['GET'])

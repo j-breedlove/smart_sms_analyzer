@@ -5,3 +5,5 @@ pipenv/
 *.env
 frontend/node_modules/
 
+/firebase.json
+/scratch
